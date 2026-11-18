@@ -1,7 +1,7 @@
 services:
-  pintu-tool:
-    image: weleone/pintu-tool:1.1
-    container_name: pintu-tool
+  wepic:
+    image: weleone/wepic:1.1
+    container_name: wepic
     restart: unless-stopped
     ports:
       - "8505:80"
