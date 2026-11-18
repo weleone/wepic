@@ -306,8 +306,8 @@
       <div id="trimParams" style="display:none">
         <div class="row">
           <span class="lbl">空白阈值</span>
-          <input type="range" id="trimThreshold" min="200" max="255" step="1" value="245" aria-label="空白判定阈值">
-          <span class="val" id="trimThresholdVal">245</span>
+          <input type="range" id="trimThreshold" min="200" max="255" step="1" value="200" aria-label="空白判定阈值">
+          <span class="val" id="trimThresholdVal">200</span>
         </div>
         <div class="row">
           <span class="lbl">裁后留白</span>
@@ -523,7 +523,7 @@
     quality: 92,
     gifDelay: 0.5,      // GIF 动图每帧停留秒数
     trim: false,        // 去白边开关（拼图 / 切图共用）
-    trimThreshold: 245, // 空白判定阈值：RGB 三通道都 ≥ 该值即视为空白
+    trimThreshold: 200, // 空白判定阈值：RGB 三通道都 ≥ 该值即视为空白
     trimPad: 0,         // 裁剪后边缘留白 px
     trimAlpha: true     // 透明像素视为空白
   };
