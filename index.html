@@ -584,8 +584,10 @@
       return;
     }
     var loaded = 0, failed = 0, pending = ok.length;
+    var results = []; // 按选中顺序暂存，加载完按序加进列表，不按 onload 先后排
     function done(){
       if (--pending > 0) return;
+      results.forEach(function(it){ if (it) state.items.push(it); });
       if (loaded){
         render();
         toast("已添加 " + loaded + " 张图片" + (skipped ? "，跳过 " + skipped + " 个不支持的文件" : "") + (failed ? "，" + failed + " 张读取失败" : ""));
@@ -593,15 +595,15 @@
         toast("图片读取失败，请换一张试试");
       }
     }
-    ok.forEach(function(entry){
+    ok.forEach(function(entry, idx){
       var url = URL.createObjectURL(entry.f);
       var img = new Image();
       img.onload = function(){
-        state.items.push({
+        results[idx] = {
           id: ++uid, url: url, img: img,
           name: entry.f.name || "图片", fmt: entry.fmt,
           w: img.naturalWidth, h: img.naturalHeight
-        });
+        };
         loaded++; done();
       };
       img.onerror = function(){
