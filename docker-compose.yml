@@ -1,6 +1,6 @@
 services:
   wepic:
-    image: weleone/wepic:1.2
+    image: weleone/wepic:1.3
     container_name: wepic
     restart: unless-stopped
     ports:

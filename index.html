@@ -243,13 +243,24 @@
   .split-overlay{position:absolute;inset:0;display:grid}
   .split-overlay .cell{border:1.5px solid rgba(255,255,255,.9);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);position:relative}
   .split-overlay .cell b{position:absolute;top:6px;left:6px;min-width:22px;height:22px;padding:0 6px;background:rgba(15,13,10,.72);color:#fff;border-radius:999px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+  /* ---------- 分图拖动手柄 ---------- */
+  .split-handle{position:absolute;z-index:6;touch-action:none}
+  .split-handle.v{top:0;bottom:0;width:24px;margin-left:-12px;cursor:ew-resize}
+  .split-handle.h{left:0;right:0;height:24px;margin-top:-12px;cursor:ns-resize}
+  .split-handle .grip{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.35);pointer-events:none}
+  .split-handle:hover .grip,.split-handle.dragging .grip{transform:translate(-50%,-50%) scale(1.15)}
+  .split-bubble{position:absolute;z-index:7;transform:translate(-50%,-140%);background:var(--ink);color:var(--bg);padding:5px 12px;border-radius:999px;font-size:13px;font-weight:700;white-space:nowrap;pointer-events:none;display:none;box-shadow:var(--shadow)}
+  .split-bubble.show{display:block}
+  .btn.small.ghost{border-color:transparent;background:transparent}
+  .btn.small.ghost:hover{border-color:var(--line)}
 </style>
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <h1>WePic小工具 <span class="ver">v1.2</span></h1>
+    <h1>WePic小工具 <span class="ver">v1.3</span></h1>
     <p>多图无缝拼接 · 一图切分 · 拖动排序</p>
   </div>
   <button class="btn" id="btnAddTop" type="button">
@@ -291,6 +302,9 @@
       <h2>切分方式</h2>
       <div class="split-modes" id="splitModes"></div>
       <p class="hint" id="splitInfo"></p>
+      <div class="row" style="margin-top:6px">
+        <button class="btn small ghost" id="btnSplitReset" type="button">恢复均分</button>
+      </div>
       <div class="row" style="margin-top:10px">
         <span class="lbl">切哪张</span>
         <div class="split-src" id="splitSrc"></div>
@@ -449,6 +463,7 @@
       <div class="split-preview" id="splitPreview" style="display:none">
         <img id="splitImg" alt="">
         <div class="split-overlay" id="splitOverlay"></div>
+        <div class="split-bubble" id="splitBubble"></div>
       </div>
     </div>
   </main>
@@ -470,6 +485,8 @@
     items: [],          // {id, url, img, name, fmt, w, h}
     mode: "collage",    // collage | split
     splitMode: "lr2",   // 当前切分方式 id
+    splitColsPos: null, // 竖线位置（0..1），null=均分
+    splitRowsPos: null, // 横线位置（0..1），null=均分
     cols: 3,
     ratio: 1,           // 格子宽 / 高
     fit: "cover",
@@ -1081,9 +1098,9 @@
     if (!el) return;
     if (state.mode === "split"){
       var src = splitSource(), m = splitModeDef();
-      el.textContent = src
-        ? "切分后每张约 " + Math.round(src.w / m.cols) + " × " + Math.round(src.h / m.rows) + " px，按顺序编号逐个下载。"
-        : "";
+      if (!src){ el.textContent = ""; return; }
+      var cumC2 = splitCum(splitPos("col")), cumR2 = splitCum(splitPos("row"));
+      el.textContent = "切分后每张约 " + Math.round((cumC2[1] - cumC2[0]) * src.w) + " × " + Math.round((cumR2[1] - cumR2[0]) * src.h) + " px 起，按顺序编号逐个下载。";
       return;
     }
     var g = exportGeometry();
@@ -1130,6 +1147,7 @@
       b.appendChild(c);
       b.addEventListener("click", function(){
         state.splitMode = m.id;
+        resetSplitPos();
         renderSplitModes();
         renderSplitPreview();
         updateSplitInfo();
@@ -1163,6 +1181,39 @@
     });
   }
 
+  /* 分割线位置：n 份 -> n-1 条线，均分 */
+  function defaultSplitPos(n){
+    var out = [];
+    for (var i = 1; i < n; i++) out.push(i / n);
+    return out;
+  }
+  function resetSplitPos(){
+    var m = splitModeDef();
+    state.splitColsPos = defaultSplitPos(m.cols);
+    state.splitRowsPos = defaultSplitPos(m.rows);
+  }
+  function splitPos(axis){
+    var m = splitModeDef();
+    if (axis === "col"){
+      if (!state.splitColsPos || state.splitColsPos.length !== m.cols - 1) resetSplitPos();
+      return state.splitColsPos;
+    }
+    if (!state.splitRowsPos || state.splitRowsPos.length !== m.rows - 1) resetSplitPos();
+    return state.splitRowsPos;
+  }
+  /* 分割线位置 -> 每份占比（和为 1） */
+  function splitFractions(pos){
+    var out = [], prev = 0;
+    for (var i = 0; i < pos.length; i++){ out.push(pos[i] - prev); prev = pos[i]; }
+    out.push(1 - prev);
+    return out;
+  }
+  /* 分割线位置 -> 累积边界 [0, ..., 1] */
+  function splitCum(pos){
+    return [0].concat(pos, [1]);
+  }
+  function pct(f){ return Math.round(f * 100); }
+
   function renderSplitPreview(){
     var src = splitSource();
     var prev = $("splitPreview");
@@ -1171,8 +1222,6 @@
     prev.style.display = "block";
     $("splitImg").src = src.url;
     var ov = $("splitOverlay");
-    ov.style.gridTemplateColumns = "repeat(" + m.cols + ", 1fr)";
-    ov.style.gridTemplateRows = "repeat(" + m.rows + ", 1fr)";
     ov.innerHTML = "";
     for (var i = 0; i < m.cols * m.rows; i++){
       var cell = document.createElement("div");
@@ -1182,15 +1231,131 @@
       cell.appendChild(b);
       ov.appendChild(cell);
     }
+    renderSplitHandles();
+    updateSplitLayout();
+  }
+
+  /* 轻量更新：只改网格轨道与手柄位置，不重建手柄（拖动中用） */
+  function updateSplitLayout(){
+    var colFrac = splitFractions(splitPos("col"));
+    var rowFrac = splitFractions(splitPos("row"));
+    var ov = $("splitOverlay");
+    ov.style.gridTemplateColumns = colFrac.map(function(f){ return (f * 100) + "%"; }).join(" ");
+    ov.style.gridTemplateRows = rowFrac.map(function(f){ return (f * 100) + "%"; }).join(" ");
+    var prev = $("splitPreview");
+    var colPos = splitPos("col"), rowPos = splitPos("row");
+    Array.prototype.forEach.call(prev.querySelectorAll(".split-handle"), function(h){
+      var axis = h.dataset.axis, idx = parseInt(h.dataset.idx, 10);
+      if (axis === "v") h.style.left = (colPos[idx] * 100) + "%";
+      else h.style.top = (rowPos[idx] * 100) + "%";
+    });
+  }
+
+  /* 拖动手柄：竖线/横线各一条，拖动改比例 */
+  function renderSplitHandles(){
+    var prev = $("splitPreview");
+    Array.prototype.forEach.call(prev.querySelectorAll(".split-handle"), function(h){ h.remove(); });
+    var m = splitModeDef();
+    var colPos = splitPos("col"), rowPos = splitPos("row");
+    colPos.forEach(function(p, i){
+      prev.appendChild(makeHandle("v", i, p));
+    });
+    rowPos.forEach(function(p, i){
+      prev.appendChild(makeHandle("h", i, p));
+    });
+  }
+  function makeHandle(axis, idx, pos){
+    var h = document.createElement("div");
+    h.className = "split-handle " + axis;
+    h.dataset.axis = axis;
+    h.dataset.idx = idx;
+    if (axis === "v") h.style.left = (pos * 100) + "%";
+    else h.style.top = (pos * 100) + "%";
+    var g = document.createElement("span");
+    g.className = "grip";
+    g.textContent = axis === "v" ? "↔" : "↕";
+    h.appendChild(g);
+    h.addEventListener("pointerdown", function(e){ startSplitDrag(e, axis, idx, h); });
+    return h;
+  }
+
+  var splitDrag = null;
+  function startSplitDrag(e, axis, idx, handle){
+    e.preventDefault();
+    e.stopPropagation();
+    handle.classList.add("dragging");
+    try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+    splitDrag = { axis: axis, idx: idx, handle: handle };
+    document.addEventListener("pointermove", onSplitDragMove);
+    document.addEventListener("pointerup", onSplitDragEnd, { once: true });
+    document.addEventListener("pointercancel", onSplitDragEnd, { once: true });
+  }
+  function onSplitDragMove(e){
+    if (!splitDrag) return;
+    var prev = $("splitPreview");
+    var rect = prev.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    var m = splitModeDef();
+    var bubble = $("splitBubble");
+    if (splitDrag.axis === "v"){
+      var pos = splitPos("col");
+      var frac = (e.clientX - rect.left) / rect.width;
+      var lo = (splitDrag.idx > 0 ? pos[splitDrag.idx - 1] : 0) + 0.05;
+      var hi = (splitDrag.idx < pos.length - 1 ? pos[splitDrag.idx + 1] : 1) - 0.05;
+      frac = Math.max(lo, Math.min(hi, frac));
+      pos[splitDrag.idx] = frac;
+      var fr = splitFractions(pos);
+      bubble.textContent = pct(fr[splitDrag.idx]) + "% | " + pct(fr[splitDrag.idx + 1]) + "%";
+      bubble.style.left = (frac * 100) + "%";
+      bubble.style.top = Math.max(24, Math.min(rect.height - 12, e.clientY - rect.top)) + "px";
+    } else {
+      var posR = splitPos("row");
+      var fracR = (e.clientY - rect.top) / rect.height;
+      var loR = (splitDrag.idx > 0 ? posR[splitDrag.idx - 1] : 0) + 0.05;
+      var hiR = (splitDrag.idx < posR.length - 1 ? posR[splitDrag.idx + 1] : 1) - 0.05;
+      fracR = Math.max(loR, Math.min(hiR, fracR));
+      posR[splitDrag.idx] = fracR;
+      var frR = splitFractions(posR);
+      bubble.textContent = pct(frR[splitDrag.idx]) + "% | " + pct(frR[splitDrag.idx + 1]) + "%";
+      bubble.style.top = (fracR * 100) + "%";
+      bubble.style.left = Math.max(40, Math.min(rect.width - 40, e.clientX - rect.left)) + "px";
+    }
+    bubble.classList.add("show");
+    updateSplitLayout();
+    updateSplitInfo();
+    updateExpInfo();
+  }
+  function onSplitDragEnd(){
+    document.removeEventListener("pointermove", onSplitDragMove);
+    if (splitDrag) splitDrag.handle.classList.remove("dragging");
+    splitDrag = null;
+    $("splitBubble").classList.remove("show");
+    renderSplitPreview();
+    updateSplitInfo();
+    updateExpInfo();
   }
 
   function updateSplitInfo(){
     var m = splitModeDef();
     var src = splitSource();
+    var colFrac = splitFractions(splitPos("col"));
+    var rowFrac = splitFractions(splitPos("row"));
     var info = m.label + "，共 " + (m.cols * m.rows) + " 张";
-    if (src) info += "；每张约 " + Math.round(src.w / m.cols) + " × " + Math.round(src.h / m.rows) + " px，按原图尺寸切，不缩放。";
+    if (m.cols > 1) info += "；列 " + colFrac.map(pct).join("% / ") + "%";
+    if (m.rows > 1) info += "；行 " + rowFrac.map(pct).join("% / ") + "%";
+    if (src){
+      var cumC = splitCum(splitPos("col")), cumR = splitCum(splitPos("row"));
+      info += "；每张约 " + Math.round((cumC[1] - cumC[0]) * src.w) + " × " + Math.round((cumR[1] - cumR[0]) * src.h) + " px 起，按原图尺寸切，不缩放。";
+    }
     $("splitInfo").textContent = info;
   }
+  $("btnSplitReset").addEventListener("click", function(){
+    resetSplitPos();
+    renderSplitPreview();
+    updateSplitInfo();
+    updateExpInfo();
+    toast("已恢复均分");
+  });
 
   function updateExportBtn(){
     var label = state.mode === "split" ? "导出分图" : "导出拼图";
@@ -1226,7 +1391,7 @@
     if (b && b.dataset.mode) setMode(b.dataset.mode);
   });
 
-  /* 分图导出：按切分方式把原图逐块切下来，按顺序编号逐个下载 */
+  /* 分图导出：按拖出来的比例切，逐块按顺序编号下载 */
   function exportSplit(){
     var src = splitSource();
     if (!src){ toast("先添加一张图片再分图"); return; }
@@ -1236,12 +1401,13 @@
     var ext = fmt === "jpeg" ? "jpg" : fmt;
     var base = (src.name || "分图").replace(/\.[^.]*$/, "");
     var W = src.w, H = src.h, total = m.cols * m.rows, idx = 0;
+    var cumC = splitCum(splitPos("col")), cumR = splitCum(splitPos("row"));
     toast("正在导出 " + total + " 张分图…");
     function next(){
       if (idx >= total){ toast("分图已导出，共 " + total + " 张"); return; }
       var r = Math.floor(idx / m.cols), c = idx % m.cols;
-      var x0 = Math.round(c * W / m.cols), x1 = Math.round((c + 1) * W / m.cols);
-      var y0 = Math.round(r * H / m.rows), y1 = Math.round((r + 1) * H / m.rows);
+      var x0 = Math.round(cumC[c] * W), x1 = Math.round(cumC[c + 1] * W);
+      var y0 = Math.round(cumR[r] * H), y1 = Math.round(cumR[r + 1] * H);
       var canvas = document.createElement("canvas");
       canvas.width = Math.max(1, x1 - x0);
       canvas.height = Math.max(1, y1 - y0);
@@ -1357,6 +1523,7 @@
   $("btnExportTop").addEventListener("click", exportCollage);
 
   renderSplitModes();
+  resetSplitPos();
   updateSplitInfo();
   render();
 })();
