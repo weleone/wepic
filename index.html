@@ -734,7 +734,7 @@
       ? "已选中第 <b>" + (i + 1) + "</b> 张 · " + escapeHtml(item.name) + "（" + effW(item) + " × " + effH(item) + "）"
       : "先点选画布中的一张图片";
     $("padCenter").innerHTML = has
-      ? '<img src="' + item.url + '" alt="">'
+      ? '<img src="' + effUrl(item) + '" alt="">'
       : "未选";
     $("padCenter").title = has ? item.name : "";
 
@@ -856,7 +856,7 @@
       var im = document.createElement("img");
       var item = null;
       state.items.forEach(function(it){ if (it.id === drag.id) item = it; });
-      im.src = item ? item.url : "";
+      im.src = item ? effUrl(item) : "";
       im.alt = "";
       g.appendChild(im);
       document.body.appendChild(g);
@@ -1312,7 +1312,7 @@
       b.className = "split-src-thumb" + (src === item ? " sel" : "");
       b.title = item.name;
       var im = document.createElement("img");
-      im.src = item.url; im.alt = item.name;
+      im.src = effUrl(item); im.alt = item.name;
       b.appendChild(im);
       b.addEventListener("click", function(){
         state.selectedId = item.id;
