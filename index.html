@@ -302,9 +302,6 @@
       <h2>切分方式</h2>
       <div class="split-modes" id="splitModes"></div>
       <p class="hint" id="splitInfo"></p>
-      <div class="row" style="margin-top:6px">
-        <button class="btn small ghost" id="btnSplitReset" type="button">恢复均分</button>
-      </div>
       <div class="row" style="margin-top:10px">
         <span class="lbl">切哪张</span>
         <div class="split-src" id="splitSrc"></div>
@@ -448,6 +445,7 @@
     <div class="stage-head">
       <span class="count">已添加 <b id="imgCount">0</b> 张图片</span>
       <span class="spacer"></span>
+      <button class="btn small" id="btnSplitResetTop" type="button" style="display:none">恢复均分</button>
       <span class="kbd-hint">拖动图片换位 · 点选后按方向键互换 · Delete 删除选中</span>
     </div>
     <div class="canvas-wrap" id="canvasWrap">
@@ -1349,7 +1347,7 @@
     }
     $("splitInfo").textContent = info;
   }
-  $("btnSplitReset").addEventListener("click", function(){
+  $("btnSplitResetTop").addEventListener("click", function(){
     resetSplitPos();
     renderSplitPreview();
     updateSplitInfo();
@@ -1373,6 +1371,7 @@
     $("spacingGroup").style.display = isSplit ? "none" : "";
     $("moveGroup").style.display = isSplit ? "none" : "";
     $("splitGroup").style.display = isSplit ? "" : "none";
+    $("btnSplitResetTop").style.display = isSplit ? "" : "none";
     $("expModeRow").style.display = isSplit ? "none" : "";
     $("expWidthRow").style.display = isSplit ? "none" : "";
     var gifBtn = document.querySelector('#expFmtSeg button[data-fmt="gif"]');
