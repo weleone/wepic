@@ -691,7 +691,11 @@
       var tile = document.createElement("div");
       tile.className = "tile fit-" + state.fit + (item.id === state.selectedId ? " selected" : "");
       tile.dataset.id = item.id;
-      tile.style.aspectRatio = state.ratio + " / 1";
+      if (state.expMode === "orig"){
+        tile.style.aspectRatio = effW(item) + " / " + effH(item);
+      } else {
+        tile.style.aspectRatio = state.ratio + " / 1";
+      }
       tile.style.borderRadius = state.radius + "px";
       if (state.fit === "contain") tile.style.background = state.bg;
 
