@@ -107,6 +107,8 @@
   .fmt-note{font-size:12px;color:var(--muted);margin:6px 0 0}
   .fmt-note b{white-space:nowrap}
   .fmt-note b{color:var(--ink)}
+  .check{display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+  .check input{accent-color:var(--accent);width:16px;height:16px;flex:none}
 
   /* direction pad */
   .pad{
@@ -294,6 +296,30 @@
         <button class="btn small" id="btnClear" type="button" disabled>清空全部</button>
         <button class="btn small" id="btnReverse" type="button" disabled>倒序排列</button>
       </div>
+    </section>
+
+    <section class="group" id="trimGroup">
+      <h2>去白边</h2>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="trimEnable"> 去白边</label>
+      </div>
+      <div id="trimParams" style="display:none">
+        <div class="row">
+          <span class="lbl">空白阈值</span>
+          <input type="range" id="trimThreshold" min="200" max="255" step="1" value="245" aria-label="空白判定阈值">
+          <span class="val" id="trimThresholdVal">245</span>
+        </div>
+        <div class="row">
+          <span class="lbl">裁后留白</span>
+          <input type="number" id="trimPad" min="0" max="50" step="1" value="0" aria-label="裁剪后边缘留白">
+          <span class="val">px</span>
+        </div>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="trimAlpha" checked> 透明像素视为空白</label>
+        </div>
+        <p class="hint" id="trimInfo"></p>
+      </div>
+      <p class="hint">勾上后先裁掉每张图的白边框，再拼图 / 切图；全白的图不裁。</p>
     </section>
 
     <section class="group" id="splitGroup" style="display:none">
@@ -495,7 +521,11 @@
     expMode: "fixed",   // fixed | orig
     expWidth: 1600,
     quality: 92,
-    gifDelay: 0.5       // GIF 动图每帧停留秒数
+    gifDelay: 0.5,      // GIF 动图每帧停留秒数
+    trim: false,        // 去白边开关（拼图 / 切图共用）
+    trimThreshold: 245, // 空白判定阈值：RGB 三通道都 ≥ 该值即视为空白
+    trimPad: 0,         // 裁剪后边缘留白 px
+    trimAlpha: true     // 透明像素视为空白
   };
   var uid = 0;
 
@@ -664,7 +694,7 @@
       if (state.fit === "contain") tile.style.background = state.bg;
 
       var img = document.createElement("img");
-      img.src = item.url;
+      img.src = effUrl(item);
       img.alt = item.name;
       img.draggable = false;
       tile.appendChild(img);
@@ -691,6 +721,7 @@
 
     updateSelPanel();
     updateExpInfo();
+    updateTrimInfo();
   }
 
   function updateSelPanel(){
@@ -698,7 +729,7 @@
     var has = i >= 0;
     var item = has ? state.items[i] : null;
     $("selInfo").innerHTML = has
-      ? "已选中第 <b>" + (i + 1) + "</b> 张 · " + escapeHtml(item.name) + "（" + item.w + " × " + item.h + "）"
+      ? "已选中第 <b>" + (i + 1) + "</b> 张 · " + escapeHtml(item.name) + "（" + effW(item) + " × " + effH(item) + "）"
       : "先点选画布中的一张图片";
     $("padCenter").innerHTML = has
       ? '<img src="' + item.url + '" alt="">'
@@ -1079,9 +1110,9 @@
         var idx = r * cols + c;
         if (idx >= n) break;
         var it = state.items[idx];
-        placements.push({ x: x, y: y, w: it.w, h: it.h });
-        x += it.w + gapO;
-        if (it.h > rowH) rowH = it.h;
+        placements.push({ x: x, y: y, w: effW(it), h: effH(it) });
+        x += effW(it) + gapO;
+        if (effH(it) > rowH) rowH = effH(it);
       }
       if (x - gapO - padO > maxRowW) maxRowW = x - gapO - padO;
       y += rowH + gapO;
@@ -1096,7 +1127,7 @@
       var src = splitSource(), m = splitModeDef();
       if (!src){ el.textContent = ""; return; }
       var cumC2 = splitCum(splitPos("col")), cumR2 = splitCum(splitPos("row"));
-      el.textContent = "切分后每张约 " + Math.round((cumC2[1] - cumC2[0]) * src.w) + " × " + Math.round((cumR2[1] - cumR2[0]) * src.h) + " px 起，按顺序编号逐个下载。";
+      el.textContent = "切分后每张约 " + Math.round((cumC2[1] - cumC2[0]) * effW(src)) + " × " + Math.round((cumR2[1] - cumR2[0]) * effH(src)) + " px 起，按顺序编号逐个下载。";
       return;
     }
     var g = exportGeometry();
@@ -1106,6 +1137,121 @@
     else
       el.textContent = "成品 " + g.W + " × " + g.H + " px。";
   }
+
+  /* ---------------- 去白边 ----------------
+     拼图 / 切图共用的前置处理：勾上后，先对每张图做 Canvas 像素扫描，
+     找到非白像素的内容边界裁掉白边框，裁完的结果再进入拼图或切图。
+     不勾时原样，拼图 / 切图行为完全不变。结果按阈值 + 透明选项 + 留白
+     缓存在 item._trim 里，参数不变不重算。 */
+  function computeTrimBox(img, threshold, alphaAsBlank){
+    var w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return null;
+    // 扫描图先缩到长边 1600 以内再读像素，算完按比例映射回原图坐标
+    var scale = Math.min(1, 1600 / Math.max(w, h));
+    var sw = Math.max(1, Math.round(w * scale)), sh = Math.max(1, Math.round(h * scale));
+    var cv = document.createElement("canvas");
+    cv.width = sw; cv.height = sh;
+    var ctx = cv.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, sw, sh);
+    var data;
+    try { data = ctx.getImageData(0, 0, sw, sh).data; }
+    catch (e){ return null; } // 读不到像素（如跨域）时不裁
+    var minX = sw, minY = sh, maxX = -1, maxY = -1;
+    for (var y = 0; y < sh; y++){
+      var row = y * sw * 4;
+      for (var x = 0; x < sw; x++){
+        var i = row + x * 4, a = data[i + 3], blank;
+        if (a === 0) blank = alphaAsBlank; // 全透明像素：按选项算
+        else blank = data[i] >= threshold && data[i + 1] >= threshold && data[i + 2] >= threshold;
+        if (!blank){
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return null; // 全白 / 全透明：找不到内容
+    return {
+      x0: Math.max(0, Math.floor(minX / scale)),
+      y0: Math.max(0, Math.floor(minY / scale)),
+      x1: Math.min(w, Math.ceil((maxX + 1) / scale)),
+      y1: Math.min(h, Math.ceil((maxY + 1) / scale))
+    };
+  }
+
+  /* 返回该图的去白边结果 {box, canvas, url, w, h}；box 为 null 表示全白不裁 */
+  function trimFor(item){
+    if (!state.trim) return null;
+    var key = state.trimThreshold + "|" + (state.trimAlpha ? 1 : 0) + "|" + state.trimPad;
+    if (item._trim && item._trim.key === key) return item._trim;
+    var box = computeTrimBox(item.img, state.trimThreshold, state.trimAlpha);
+    var out = { key: key, box: box, canvas: null, url: null, w: item.w, h: item.h };
+    if (box){
+      var pad = state.trimPad;
+      var x0 = Math.max(0, box.x0 - pad), y0 = Math.max(0, box.y0 - pad);
+      var x1 = Math.min(item.w, box.x1 + pad), y1 = Math.min(item.h, box.y1 + pad);
+      var cv = document.createElement("canvas");
+      cv.width = Math.max(1, x1 - x0); cv.height = Math.max(1, y1 - y0);
+      var ctx = cv.getContext("2d");
+      ctx.drawImage(item.img, x0, y0, x1 - x0, y1 - y0, 0, 0, cv.width, cv.height);
+      out.canvas = cv; out.w = cv.width; out.h = cv.height;
+      try { out.url = cv.toDataURL("image/png"); } catch (e){ out.url = null; }
+    }
+    item._trim = out;
+    return out;
+  }
+
+  /* 生效的图 / 尺寸 / 预览地址：去白边关着或全白不裁时就是原图 */
+  function effImg(item){ var t = trimFor(item); return t && t.canvas ? t.canvas : item.img; }
+  function effW(item){ var t = trimFor(item); return t ? t.w : item.w; }
+  function effH(item){ var t = trimFor(item); return t ? t.h : item.h; }
+  function effUrl(item){ var t = trimFor(item); return t && t.url ? t.url : item.url; }
+
+  function updateTrimInfo(){
+    var el = $("trimInfo");
+    if (!el) return;
+    if (!state.trim || !state.items.length){ el.textContent = ""; return; }
+    var cut = 0, blank = 0;
+    state.items.forEach(function(item){
+      var t = trimFor(item);
+      if (t && t.box) cut++; else blank++;
+    });
+    el.textContent = cut
+      ? "已裁 " + cut + " 张" + (blank ? "，" + blank + " 张全白未裁" : "")
+      : "没有可裁的白边";
+  }
+
+  /* 去白边控件 */
+  $("trimEnable").addEventListener("change", function(){
+    state.trim = this.checked;
+    $("trimParams").style.display = this.checked ? "" : "none";
+    render();
+  });
+  var trimTimer = null;
+  $("trimThreshold").addEventListener("input", function(){
+    state.trimThreshold = parseInt(this.value, 10);
+    $("trimThresholdVal").textContent = this.value;
+    clearTimeout(trimTimer);
+    trimTimer = setTimeout(render, 150); // 拖滑块时防抖，松手再重算
+  });
+  $("trimThreshold").addEventListener("change", function(){
+    clearTimeout(trimTimer);
+    render();
+  });
+  $("trimPad").addEventListener("change", function(){
+    var v = parseInt(this.value, 10);
+    if (isNaN(v)) v = 0;
+    v = Math.max(0, Math.min(50, v));
+    this.value = v;
+    state.trimPad = v;
+    render();
+  });
+  $("trimAlpha").addEventListener("change", function(){
+    state.trimAlpha = this.checked;
+    render();
+  });
 
   /* ---------------- 切图 ---------------- */
   function splitModeDef(){
@@ -1216,7 +1362,7 @@
     if (!src){ prev.style.display = "none"; return; }
     var m = splitModeDef();
     prev.style.display = "block";
-    $("splitImg").src = src.url;
+    $("splitImg").src = effUrl(src);
     var ov = $("splitOverlay");
     ov.innerHTML = "";
     for (var i = 0; i < m.cols * m.rows; i++){
@@ -1341,7 +1487,7 @@
     if (m.rows > 1) info += "；行 " + rowFrac.map(pct).join("% / ") + "%";
     if (src){
       var cumC = splitCum(splitPos("col")), cumR = splitCum(splitPos("row"));
-      info += "；每张约 " + Math.round((cumC[1] - cumC[0]) * src.w) + " × " + Math.round((cumR[1] - cumR[0]) * src.h) + " px 起，按原图尺寸切，不缩放。";
+      info += "；每张约 " + Math.round((cumC[1] - cumC[0]) * effW(src)) + " × " + Math.round((cumR[1] - cumR[0]) * effH(src)) + " px 起，按原图尺寸切，不缩放。";
     }
     $("splitInfo").textContent = info;
   }
@@ -1397,7 +1543,7 @@
     var mime = fmt === "png" ? "image/png" : (fmt === "webp" ? "image/webp" : "image/jpeg");
     var ext = fmt === "jpeg" ? "jpg" : fmt;
     var base = (src.name || "切图").replace(/\.[^.]*$/, "");
-    var W = src.w, H = src.h, total = m.cols * m.rows, idx = 0;
+    var W = effW(src), H = effH(src), total = m.cols * m.rows, idx = 0;
     var cumC = splitCum(splitPos("col")), cumR = splitCum(splitPos("row"));
     toast("正在导出 " + total + " 张切图…");
     function next(){
@@ -1409,7 +1555,7 @@
       canvas.width = Math.max(1, x1 - x0);
       canvas.height = Math.max(1, y1 - y0);
       var ctx = canvas.getContext("2d");
-      ctx.drawImage(src.img, x0, y0, x1 - x0, y1 - y0, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(effImg(src), x0, y0, x1 - x0, y1 - y0, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(function(blob){
         if (blob){
           var a = document.createElement("a");
@@ -1436,9 +1582,9 @@
     delaySec = Math.max(0.1, Math.min(10, delaySec));
     var delayMs = Math.round(delaySec * 1000);
     var first = state.items[0];
-    var scale = Math.min(1, 800 / Math.max(first.w, first.h));
-    var W = Math.max(2, Math.round(first.w * scale));
-    var H = Math.max(2, Math.round(first.h * scale));
+    var scale = Math.min(1, 800 / Math.max(effW(first), effH(first)));
+    var W = Math.max(2, Math.round(effW(first) * scale));
+    var H = Math.max(2, Math.round(effH(first) * scale));
     toast("正在生成 GIF 动图…");
     var gif = new GIF({ workers: 2, quality: 10, width: W, height: H, workerScript: "gif.worker.js", repeat: 0 });
     state.items.forEach(function(item){
@@ -1447,7 +1593,7 @@
       var ctx = canvas.getContext("2d");
       ctx.fillStyle = state.bg;
       ctx.fillRect(0, 0, W, H);
-      drawCover(ctx, item.img, 0, 0, W, H);
+      drawCover(ctx, effImg(item), 0, 0, W, H);
       gif.addFrame(ctx, { copy: true, delay: delayMs });
     });
     gif.on("finished", function(blob){
@@ -1496,7 +1642,7 @@
         ctx.fillStyle = state.bg;
         ctx.fillRect(p.x, p.y, p.w, p.h);
       }
-      drawCover(ctx, item.img, p.x, p.y, p.w, p.h);
+      drawCover(ctx, effImg(item), p.x, p.y, p.w, p.h);
       ctx.restore();
     });
 
