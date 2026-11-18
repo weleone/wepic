@@ -216,14 +216,41 @@
 
   .thumb-strip{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
   .thumb-strip:empty{display:none}
+
+  /* ---------- 模式切换 ---------- */
+  .mode-seg{display:flex;background:var(--chip);border-radius:10px;padding:3px;gap:2px}
+  .mode-seg button{flex:1;border:none;background:transparent;border-radius:8px;padding:8px 10px;font-size:14px;font-weight:500}
+  .mode-seg button[aria-pressed="true"]{background:var(--panel);box-shadow:0 1px 4px rgba(0,0,0,.14);font-weight:700}
+
+  /* ---------- 分图模式选择器 ---------- */
+  .split-modes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .split-mode{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:10px 6px 8px;cursor:pointer;text-align:center}
+  .split-mode:hover{border-color:var(--ink)}
+  .split-mode[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+  .split-mode .diagram{width:64px;height:48px;margin:0 auto 6px;display:grid;gap:2px;background:var(--panel2);border-radius:6px;padding:3px}
+  .split-mode .diagram span{background:var(--teal);border-radius:2px;display:block}
+  .split-mode .lbl{font-size:12px;font-weight:700}
+  .split-mode .cnt{font-size:11px;color:var(--muted)}
+  .split-src{display:flex;gap:8px;flex-wrap:wrap}
+  .split-src:empty{display:none}
+  .split-src-thumb{width:52px;height:52px;border:2px solid var(--line);border-radius:10px;padding:0;overflow:hidden;background:var(--chip)}
+  .split-src-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .split-src-thumb.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+
+  /* ---------- 分图预览 ---------- */
+  .split-preview{width:100%;max-width:880px;box-shadow:var(--shadow);position:relative;border-radius:6px;overflow:hidden}
+  .split-preview img{width:100%;display:block}
+  .split-overlay{position:absolute;inset:0;display:grid}
+  .split-overlay .cell{border:1.5px solid rgba(255,255,255,.9);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);position:relative}
+  .split-overlay .cell b{position:absolute;top:6px;left:6px;min-width:22px;height:22px;padding:0 6px;background:rgba(15,13,10,.72);color:#fff;border-radius:999px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
 </style>
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <h1>拼图小工具 <span class="ver">v1.1</span></h1>
-    <p>多图无缝拼接 · 拖动排序 · 上下左右互换</p>
+    <h1>拼图小工具 <span class="ver">v1.2</span></h1>
+    <p>多图无缝拼接 · 一图切分 · 拖动排序</p>
   </div>
   <button class="btn" id="btnAddTop" type="button">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -232,13 +259,22 @@
   <button class="btn" id="btnClearTop" type="button" disabled>清空</button>
   <button class="btn primary" id="btnExportTop" type="button" disabled>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16"/></svg>
-    导出拼图
+    <span id="btnExportTopLabel">导出拼图</span>
   </button>
 </header>
 
 <div class="layout">
   <!-- ============ 控制面板 ============ -->
   <aside class="panel">
+    <section class="group">
+      <h2>模式</h2>
+      <div class="mode-seg" id="modeSeg" role="group" aria-label="模式">
+        <button type="button" data-mode="collage" aria-pressed="true">拼图</button>
+        <button type="button" data-mode="split" aria-pressed="false">分图</button>
+      </div>
+      <p class="hint">拼图：多张图拼成一张；分图：一张图按示例切成多张。</p>
+    </section>
+
     <section class="group">
       <h2>图片</h2>
       <div class="row">
@@ -251,7 +287,18 @@
       </div>
     </section>
 
-    <section class="group">
+    <section class="group" id="splitGroup" style="display:none">
+      <h2>切分方式</h2>
+      <div class="split-modes" id="splitModes"></div>
+      <p class="hint" id="splitInfo"></p>
+      <div class="row" style="margin-top:10px">
+        <span class="lbl">切哪张</span>
+        <div class="split-src" id="splitSrc"></div>
+      </div>
+      <p class="hint">点一张图选它切分（默认第一张）；加了多张图时在这里切换。</p>
+    </section>
+
+    <section class="group" id="layoutGroup">
       <h2>版式</h2>
       <div class="row">
         <span class="lbl">每行列数</span>
@@ -282,7 +329,7 @@
       <p class="hint">「裁剪填满」会把图片裁到格子大小、无空白；「完整显示」不裁图，空缺处用背景色补齐。</p>
     </section>
 
-    <section class="group">
+    <section class="group" id="spacingGroup">
       <h2>间距与边框</h2>
       <div class="row">
         <span class="lbl">图片间距</span>
@@ -315,7 +362,7 @@
       </div>
     </section>
 
-    <section class="group">
+    <section class="group" id="moveGroup">
       <h2>移动选中图片</h2>
       <p class="sel-info" id="selInfo">先点选画布中的一张图片</p>
       <div class="pad" aria-label="方向互换">
@@ -348,7 +395,7 @@
           <button type="button" data-fmt="gif">GIF 动图</button>
         </div>
       </div>
-      <div class="row">
+      <div class="row" id="expModeRow">
         <span class="lbl">尺寸基准</span>
         <div class="seg" id="expModeSeg" role="group" aria-label="导出尺寸基准">
           <button type="button" data-mode="fixed">固定宽度</button>
@@ -399,6 +446,10 @@
         </div>
       </div>
       <div class="collage" id="collage" style="display:none"></div>
+      <div class="split-preview" id="splitPreview" style="display:none">
+        <img id="splitImg" alt="">
+        <div class="split-overlay" id="splitOverlay"></div>
+      </div>
     </div>
   </main>
 </div>
@@ -417,6 +468,8 @@
 
   var state = {
     items: [],          // {id, url, img, name, fmt, w, h}
+    mode: "collage",    // collage | split
+    splitMode: "lr2",   // 当前切分方式 id
     cols: 3,
     ratio: 1,           // 格子宽 / 高
     fit: "cover",
@@ -432,6 +485,19 @@
     gifDelay: 0.5       // GIF 动图每帧停留秒数
   };
   var uid = 0;
+
+  /* 切分方式：点示例小图选择 */
+  var SPLIT_MODES = [
+    { id: "lr2",  label: "左右 2 分", cols: 2, rows: 1 },
+    { id: "tb2",  label: "上下 2 分", cols: 1, rows: 2 },
+    { id: "lr3",  label: "左右 3 分", cols: 3, rows: 1 },
+    { id: "tb3",  label: "上下 3 分", cols: 1, rows: 3 },
+    { id: "g4",   label: "四格",     cols: 2, rows: 2 },
+    { id: "t3b3", label: "上三下三", cols: 3, rows: 2 },
+    { id: "g6",   label: "六格",     cols: 2, rows: 3 },
+    { id: "g9",   label: "九宫格",   cols: 3, rows: 3 },
+    { id: "g16",  label: "十六格",   cols: 4, rows: 4 }
+  ];
 
   /* ---------------- 元素 ---------------- */
   function $(id){ return document.getElementById(id); }
@@ -560,7 +626,14 @@
     });
 
     emptyState.style.display = has ? "none" : "block";
-    collage.style.display = has ? "grid" : "none";
+    if (state.mode === "split"){
+      collage.style.display = "none";
+      renderSplitPreview();
+      renderSplitSrc();
+    } else {
+      $("splitPreview").style.display = "none";
+      collage.style.display = has ? "grid" : "none";
+    }
 
     collage.style.gridTemplateColumns = "repeat(" + state.cols + ", 1fr)";
     collage.style.gap = state.gap + "px";
@@ -1006,12 +1079,189 @@
   function updateExpInfo(){
     var el = $("expSizeInfo");
     if (!el) return;
+    if (state.mode === "split"){
+      var src = splitSource(), m = splitModeDef();
+      el.textContent = src
+        ? "切分后每张约 " + Math.round(src.w / m.cols) + " × " + Math.round(src.h / m.rows) + " px，按顺序编号逐个下载。"
+        : "";
+      return;
+    }
     var g = exportGeometry();
     if (!g){ el.textContent = ""; return; }
     if (state.expMode === "orig")
       el.textContent = "每张图按原始像素尺寸拼、不缩放，成品 " + g.W + " × " + g.H + " px。";
     else
       el.textContent = "成品 " + g.W + " × " + g.H + " px。";
+  }
+
+  /* ---------------- 分图 ---------------- */
+  function splitModeDef(){
+    for (var i = 0; i < SPLIT_MODES.length; i++)
+      if (SPLIT_MODES[i].id === state.splitMode) return SPLIT_MODES[i];
+    return SPLIT_MODES[0];
+  }
+
+  /* 分图用的原图：选中的那张，没有选中就取第一张 */
+  function splitSource(){
+    var i = selectedIndex();
+    if (i >= 0) return state.items[i];
+    return state.items[0] || null;
+  }
+
+  function renderSplitModes(){
+    var wrap = $("splitModes");
+    wrap.innerHTML = "";
+    SPLIT_MODES.forEach(function(m){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "split-mode";
+      b.setAttribute("aria-pressed", m.id === state.splitMode ? "true" : "false");
+      var d = document.createElement("div");
+      d.className = "diagram";
+      d.style.gridTemplateColumns = "repeat(" + m.cols + ", 1fr)";
+      d.style.gridTemplateRows = "repeat(" + m.rows + ", 1fr)";
+      for (var i = 0; i < m.cols * m.rows; i++) d.appendChild(document.createElement("span"));
+      b.appendChild(d);
+      var l = document.createElement("div");
+      l.className = "lbl"; l.textContent = m.label;
+      b.appendChild(l);
+      var c = document.createElement("div");
+      c.className = "cnt"; c.textContent = m.cols + " × " + m.rows + " · " + (m.cols * m.rows) + " 张";
+      b.appendChild(c);
+      b.addEventListener("click", function(){
+        state.splitMode = m.id;
+        renderSplitModes();
+        renderSplitPreview();
+        updateSplitInfo();
+        updateExpInfo();
+      });
+      wrap.appendChild(b);
+    });
+  }
+
+  function renderSplitSrc(){
+    var wrap = $("splitSrc");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    var src = splitSource();
+    state.items.forEach(function(item){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "split-src-thumb" + (src === item ? " sel" : "");
+      b.title = item.name;
+      var im = document.createElement("img");
+      im.src = item.url; im.alt = item.name;
+      b.appendChild(im);
+      b.addEventListener("click", function(){
+        state.selectedId = item.id;
+        renderSplitSrc();
+        renderSplitPreview();
+        updateSplitInfo();
+        updateExpInfo();
+      });
+      wrap.appendChild(b);
+    });
+  }
+
+  function renderSplitPreview(){
+    var src = splitSource();
+    var prev = $("splitPreview");
+    if (!src){ prev.style.display = "none"; return; }
+    var m = splitModeDef();
+    prev.style.display = "block";
+    $("splitImg").src = src.url;
+    var ov = $("splitOverlay");
+    ov.style.gridTemplateColumns = "repeat(" + m.cols + ", 1fr)";
+    ov.style.gridTemplateRows = "repeat(" + m.rows + ", 1fr)";
+    ov.innerHTML = "";
+    for (var i = 0; i < m.cols * m.rows; i++){
+      var cell = document.createElement("div");
+      cell.className = "cell";
+      var b = document.createElement("b");
+      b.textContent = i + 1;
+      cell.appendChild(b);
+      ov.appendChild(cell);
+    }
+  }
+
+  function updateSplitInfo(){
+    var m = splitModeDef();
+    var src = splitSource();
+    var info = m.label + "（" + m.cols + " × " + m.rows + "，共 " + (m.cols * m.rows) + " 张）";
+    if (src) info += "；每张约 " + Math.round(src.w / m.cols) + " × " + Math.round(src.h / m.rows) + " px，按原图尺寸切，不缩放。";
+    $("splitInfo").textContent = info;
+  }
+
+  function updateExportBtn(){
+    var label = state.mode === "split" ? "导出分图" : "导出拼图";
+    $("btnExport").textContent = label;
+    $("btnExportTopLabel").textContent = label;
+  }
+
+  function setMode(mode){
+    state.mode = mode;
+    var isSplit = mode === "split";
+    Array.prototype.forEach.call($("modeSeg").querySelectorAll("button"), function(b){
+      b.setAttribute("aria-pressed", b.dataset.mode === mode ? "true" : "false");
+    });
+    $("layoutGroup").style.display = isSplit ? "none" : "";
+    $("spacingGroup").style.display = isSplit ? "none" : "";
+    $("moveGroup").style.display = isSplit ? "none" : "";
+    $("splitGroup").style.display = isSplit ? "" : "none";
+    $("expModeRow").style.display = isSplit ? "none" : "";
+    $("expWidthRow").style.display = isSplit ? "none" : "";
+    var gifBtn = document.querySelector('#expFmtSeg button[data-fmt="gif"]');
+    if (gifBtn) gifBtn.style.display = isSplit ? "none" : "";
+    if (isSplit && state.expFmt === "gif"){
+      state.expFmt = "png";
+      setSeg("expFmtSeg", "fmt", "png");
+      $("gifDelayRow").style.display = "none";
+    }
+    updateExportBtn();
+    updateSplitInfo();
+    render();
+  }
+  $("modeSeg").addEventListener("click", function(e){
+    var b = e.target.closest ? e.target.closest("button") : null;
+    if (b && b.dataset.mode) setMode(b.dataset.mode);
+  });
+
+  /* 分图导出：按切分方式把原图逐块切下来，按顺序编号逐个下载 */
+  function exportSplit(){
+    var src = splitSource();
+    if (!src){ toast("先添加一张图片再分图"); return; }
+    var m = splitModeDef();
+    var fmt = state.expFmt === "gif" ? "png" : state.expFmt;
+    var mime = fmt === "png" ? "image/png" : (fmt === "webp" ? "image/webp" : "image/jpeg");
+    var ext = fmt === "jpeg" ? "jpg" : fmt;
+    var base = (src.name || "分图").replace(/\.[^.]*$/, "");
+    var W = src.w, H = src.h, total = m.cols * m.rows, idx = 0;
+    toast("正在导出 " + total + " 张分图…");
+    function next(){
+      if (idx >= total){ toast("分图已导出，共 " + total + " 张"); return; }
+      var r = Math.floor(idx / m.cols), c = idx % m.cols;
+      var x0 = Math.round(c * W / m.cols), x1 = Math.round((c + 1) * W / m.cols);
+      var y0 = Math.round(r * H / m.rows), y1 = Math.round((r + 1) * H / m.rows);
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, x1 - x0);
+      canvas.height = Math.max(1, y1 - y0);
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(src.img, x0, y0, x1 - x0, y1 - y0, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function(blob){
+        if (blob){
+          var a = document.createElement("a");
+          a.download = base + "-" + (idx + 1) + "." + ext;
+          a.href = URL.createObjectURL(blob);
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
+        }
+        idx++;
+        setTimeout(next, 350);
+      }, mime, state.quality / 100);
+    }
+    next();
   }
 
   /* GIF 动图导出: 每张图一帧, 按顺序轮播, 每帧停留 gifDelay 秒, 无限循环 */
@@ -1053,6 +1303,7 @@
   }
 
   function exportCollage(){
+    if (state.mode === "split"){ exportSplit(); return; }
     if (state.expFmt === "gif"){ exportGif(); return; }
     var n = state.items.length;
     if (!n){ toast("先添加图片再导出"); return; }
@@ -1105,6 +1356,8 @@
   $("btnExport").addEventListener("click", exportCollage);
   $("btnExportTop").addEventListener("click", exportCollage);
 
+  renderSplitModes();
+  updateSplitInfo();
   render();
 })();
 </script>
