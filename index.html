@@ -1057,7 +1057,7 @@
 
   /* ---------------- 导出 ---------------- */
   function drawCover(ctx, img, x, y, w, h){
-    var iw = img.naturalWidth, ih = img.naturalHeight;
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
     if (!iw || !ih){ return; }
     if (state.fit === "contain"){
       var s = Math.min(w / iw, h / ih);
